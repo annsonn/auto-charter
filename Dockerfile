@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir torch==2.3.1 torchvision==0.18.1 torchaudio==2.3.
 
 # Install core dependencies
 RUN pip install --no-cache-dir numpy==1.26.4
+RUN pip install --no-cache-dir scipy==1.9.3
 
 # Install audio libraries
 RUN pip install --no-cache-dir librosa==0.10.2.post1 soundfile==0.12.1 mido==1.3.2
