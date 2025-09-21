@@ -2,6 +2,24 @@
 setlocal ENABLEDELAYEDEXPANSION
 
 set "ROOT=%CD%"
+set "IMAGE=ch-midi"
+set "LEAD=vocals"
+set "DRUMS=skip"
+set "OUT_ROOT=out"
+set "SEPARATED_ROOT=separated"
+set "DOCKERFILE=Dockerfile"
+
+if exist "%ROOT%\%DOCKERFILE%" (
+  echo Building %IMAGE% image from %DOCKERFILE%...
+  docker build -f "%DOCKERFILE%" -t %IMAGE% .
+  if errorlevel 1 (
+    echo Docker build failed. Aborting.
+    exit /b 1
+  )
+) else (
+  echo Dockerfile not found at %ROOT%\%DOCKERFILE%. Aborting.
+  exit /b 1
+)
 
 echo ========================================
 echo Clone Hero Audio -^> MIDI Batch Processor
@@ -14,20 +32,6 @@ set "DRUMS=skip"
 set "OUT_ROOT=out"
 set "SEPARATED_ROOT=separated"
 
-echo Resetting previous outputs...
-if exist "%ROOT%\%OUT_ROOT%" (
-  echo   Clearing "%OUT_ROOT%"...
-  rd /s /q "%ROOT%\%OUT_ROOT%"
-)
-if exist "%ROOT%\%SEPARATED_ROOT%" (
-  echo   Clearing "%SEPARATED_ROOT%"...
-  rd /s /q "%ROOT%\%SEPARATED_ROOT%"
-)
-mkdir "%ROOT%\%OUT_ROOT%" >nul 2>&1
-mkdir "%ROOT%\%SEPARATED_ROOT%" >nul 2>&1
-
-echo.
-
 if "%~1"=="" goto process_all
 
 echo Processing provided inputs...
@@ -39,6 +43,18 @@ if not exist "songs" (
   echo The "songs" folder is missing. Create it and add MP3/WAV files.
   goto done
 )
+
+echo Resetting previous outputs...
+if exist "%ROOT%\%OUT_ROOT%" (
+  echo   Clearing "%OUT_ROOT%"...
+  rd /s /q "%ROOT%\%OUT_ROOT%"
+)
+if exist "%ROOT%\%SEPARATED_ROOT%" (
+  echo   Clearing "%SEPARATED_ROOT%"...
+  rd /s /q "%ROOT%\%SEPARATED_ROOT%"
+)
+mkdir "%ROOT%\%OUT_ROOT%" >nul 2>&1
+mkdir "%ROOT%\%SEPARATED_ROOT%" >nul 2>&1
 
 echo No arguments provided. Processing all MP3/WAV in "songs\"...
 set "HAS_FILES="

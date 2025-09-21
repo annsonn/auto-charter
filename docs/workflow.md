@@ -74,7 +74,11 @@ Acceptance checks (suggested)
 - Warn if normalized_parts_present is missing PART GUITAR or PART BASS (or PART DRUMS if you expect it).
 
 Auto-Chart: MIDI → .chart via MIDI-CH
-- Tool: https://github.com/TheNathannator/MIDI-CH
+### Automated Docker helper
+- Build the automation image: `docker build -f Dockerfile.midi-ch -t midi-ch-batch .`
+- Run against all `merged.mid` files in `out/`: `docker run --rm -v "%cd%":/work midi-ch-batch --input /work/out --output /work/charts`
+- Outputs mirror the pipeline song folders in `charts/`, extracting any `.zip` produced by MIDI-CH into place for follow-up editing.
+- Tool: https://github.com/EFHIII/midi-ch
 - Inputs:
   - Use normalized.mid if available, otherwise merged.mid
   - You can also feed separate part MIDIs if desired
@@ -153,3 +157,4 @@ Quick reference: common commands
 - Process a YouTube URL: docker run --rm -v "%cd%":/work ch-midi python /usr/local/bin/pipeline.py "https://youtu.be/XXXXXXXX" --out out --lead other
 - Run analyzer: python tools/midi_scout.py out/MySong/merged.mid --out out/MySong/summary.json --normalize out/MySong/normalized.mid
 - Import into MIDI-CH: follow the MIDI-CH README; use normalized.mid if available
+
