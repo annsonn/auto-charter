@@ -1,160 +1,117 @@
-Audio â†’ MIDI â†’ Clone Hero Chart Workflow
+Audio ? MIDI ? Clone Hero Chart Workflow
+========================================
 
-Overview
-- Input: MP3/WAV file or YouTube URL
-- Output (automated): Per-instrument MIDIs (bass, lead), a merged multitrack MIDI with canonical PART names
-- Output (assisted/manual): Clone Hero .chart refined in Moonscraper with difficulty reductions via CAT
+This guide drills into every stage of the toolchain the batch scripts orchestrate. If you just want the defaults, run `./run_all.bat` from PowerShell and skip to **Post-processing**. The remainder of this document explains what each stage does, the files it produces, and how to customise the pipeline.
 
-Prereqs
-- Windows 10 with Docker Desktop + WSL2 enabled
-- Recommended Docker resources: 4â€“8 vCPU, 4â€“8 GB RAM
+Prerequisites
+-------------
+- Windows 10/11 with Docker Desktop (WSL 2 backend)
+- Adequate Docker resources (4–8 vCPU, 6–8?GB RAM)
+- PowerShell (included with Windows)
+- MP3/WAV source material placed in `songs/`
 
-Build
-- From repo root:
-  - docker build -t ch-midi .
+Stage 0: One-shot automation
+----------------------------
+### `./run_all.bat`
+Runs the full stack:
+1. `process_songs.bat` – rebuilds the `ch-midi` image, clears `out/` and `separated/`, then generates fresh stems and MIDIs.
+2. `convert_opus.bat` – rebuilds `ffmpeg-opus` and creates an Opus copy of every track in `opus-output/`.
+3. `auto-chart.bat` – rebuilds `midi-ch-batch`, feeds each `merged.mid` to MIDI-CH, copies `notes.mid`, looks for `<Song>.opus`/`.ogg` and stores it as `song.opus`, then stages chart folders under `charts/`.
 
-Run: Convert Audio â†’ Stems â†’ MIDIs â†’ Merged MIDI
-Options
-- Lead selection:
-  - --lead vocals (default) or --lead other
-  - This determines which stem becomes PART GUITAR
-- Drums:
-  - --drums skip (default) or --drums basic
-  - Basic Pitch is not suited for drums; default keeps drums off to avoid noisy results
-- YouTube URL input:
-  - Pass a YouTube URL instead of a file path
-  - Pipeline uses yt-dlp internally to download/convert
+Each script stops on failure. Rerun the failed stage (or `run_all.bat`) after correcting the issue.
 
-Windows options
-- Recommended:
-  - .\process_songs.bat
-    - No args: processes all MP3/WAV in songs\
-    - With args: pass specific files or paths
-- Manual:
-  - cmd.exe:
-    - docker run --rm -v "%cd%":/work ch-midi python /usr/local/bin/pipeline.py "songs\YourSong.mp3" --out out --lead vocals --drums skip
-  - PowerShell:
-    - docker run --rm -v "${PWD}:/work" ch-midi python /usr/local/bin/pipeline.py "songs/YourSong.mp3" --out out --lead vocals --drums skip
-- YouTube input:
-  - docker run --rm -v "%cd%":/work ch-midi python /usr/local/bin/pipeline.py "https://www.youtube.com/watch?v=XXXXXXXX" --out out --lead vocals
+Stage 1: Process songs
+----------------------
+### Script
+```
+./process_songs.bat [optional song paths]
+```
 
-Outputs
-- separated/htdemucs/<SongName>/
-  - vocals.wav, bass.wav, drums.wav, other.wav
-- out/<SongName>/
-  - bass/bass_basic_pitch.mid
-  - vocals/vocals_basic_pitch.mid or other/other_basic_pitch.mid
-  - merged.mid (multitrack; canonical track names; PPQ preserved)
-- Track names in merged.mid:
-  - Lead stem â†’ PART GUITAR
-  - Bass stem â†’ PART BASS
-  - Optional non-lead (vocals/other) â†’ PART RHYTHM (only included if transcribed)
-  - PART DRUMS only included if a drums MIDI was actually generated
+### What happens
+- Builds/updates the `ch-midi` Docker image.
+- For every MP3/WAV in `songs/` (or supplied on the command line):
+  1. **Demucs** separates the song into `vocals`, `bass`, `drums`, and `other` stems.
+  2. **Basic Pitch** converts selected stems to MIDI (bass is always processed; vocals/other depends on `--lead`; drums only with `--drums basic`).
+  3. The script merges available MIDI tracks into `merged.mid` and writes a per-part map.
 
-Analyze and normalize the multitrack MIDI (optional but recommended)
-- Goal: Inspect timing/structure, auto-guess parts, and optionally write a normalized copy with canonical house names
+### Output
+- `separated/htdemucs/<Song>/` – WAV stems.
+- `out/<Song>/`
+  - `bass/bass_basic_pitch.mid`
+  - `vocals_basic_pitch.mid` or `other_basic_pitch.mid`
+  - `merged.mid` (multi-track, canonical PART names)
+  - `notes.mid` (copy created in Stage 3)
 
-Run MIDI Scout
-- python tools/midi_scout.py out/<SongName>/merged.mid --out out/<SongName>/summary.json --normalize out/<SongName>/normalized.mid
-- Summarizes:
-  - Global timing: ppq, tempo map, time signatures, key signatures (if present)
-  - Tracks: names, instrument names, channels, programs
-  - Notes: count, pitch range, drum vs non-drum, median IOI (beats) for density
-  - Heuristics: house_guess mapping to PART GUITAR/BASS/DRUMS/KEYS/VOCALS
-  - Collisions and issues:
-    - Missing parts, no tempo events, too many tempo changes, mis-channeled drums, zero-note files
-- Normalization:
-  - If there are unique guesses with no collisions, normalized.mid writes canonical PART names to tracks without changing timing
-  - If collisions or ambiguity exist, it prints warnings; choose best manually or keep original
+### Customisation
+Edit the environment variables at the top of `process_songs.bat`:
+- `LEAD=vocals|other`
+- `DRUMS=skip|basic`
+- `OUT_ROOT=...`
+Manual options: `docker run --rm -v "${PWD}:/work" ch-midi python /usr/local/bin/pipeline.py --help`
 
-Acceptance checks (suggested)
-- Fail if no_notes_on_any_track in summary.json. Likely wrong file.
-- Warn if no_tempo_events_found or too_many_tempo_changes (>50). Might be corrupted export or unnecessary tempo bumps.
-- Warn if a drums-like track has zero drum_notes (mis-channeled drums).
-- Warn if normalized_parts_present is missing PART GUITAR or PART BASS (or PART DRUMS if you expect it).
+Stage 2: Convert audio to Opus
+------------------------------
+### Script
+```
+./convert_opus.bat [optional song paths]
+```
 
-Auto-Chart: MIDI â†’ .chart via MIDI-CH
-### Automated Docker helper
-- Build the automation image: `docker build -f Dockerfile.midi-ch -t midi-ch-batch .`
-- Run against all `merged.mid` files in `out/`: `docker run --rm -v "%cd%":/work midi-ch-batch --input /work/out --output /work/charts`
-- Outputs mirror the pipeline song folders in `charts/`, extracting any `.zip` produced by MIDI-CH into place for follow-up editing.
-- Tool: https://github.com/EFHIII/midi-ch
-- Inputs:
-  - Use normalized.mid if available, otherwise merged.mid
-  - You can also feed separate part MIDIs if desired
-- Expected behavior:
-  - Converts multitrack MIDI to Clone Hero 5-lane .chart
-  - Flags suspect areas for cleanup
-- Output target:
-  - charts/<SongFolder>/notes.chart
+### What happens
+- Builds/updates the `ffmpeg-opus` image.
+- Uses a PowerShell helper to enumerate MP3s safely (handles spaces/parentheses).
+- Invokes ffmpeg (`libopus`, 160?kbps, 48?kHz) for every source file.
 
-Moonscraper refinement
-- Tool: https://github.com/Fireboyd78/Moonscraper
-- Prepare a chart folder:
-  - charts/<SongFolder>/
-    - notes.chart (from MIDI-CH)
-    - audio.(ogg|mp3) (source audio used for Demucs; consider using a mixed version, not stems)
-    - song.ini (see template below)
-    - album.png (optional)
-- In Moonscraper:
-  - Verify sync against audio; adjust BPM map if needed
-  - Fix flagged sections from MIDI-CH
-  - Ensure playability: hand shapes, chord choices, avoid excessive awkward patterns
-  - Events:
-    - Sections: INTRO, VERSE, PRE-CHORUS, CHORUS, SOLO, BRIDGE, OUTRO, etc.
-    - Star Power: place fairly every ~15â€“25 seconds, avoid overlap with extremely dense parts
-    - Optional: Crowd events, lyrics/markers (if working with PART VOCALS separately)
-  - Save back to notes.chart
+### Output
+- `opus-output/<Song>.opus`
 
-Difficulty reductions (Expert â†’ Hard/Medium/Easy)
-- Toolset: C3 Automation Tools (CAT) in REAPER
-  - https://github.com/C3UOfficial/c3
-- Workflow:
-  - Import your Expert chart/MIDI into REAPER
-  - Use CAT to generate reductions to H/M/E automatically, tweak thresholds if needed
-  - Export and re-import to Moonscraper if you want to polish patterns/sections
-- Alternative:
-  - Manual pruning in Moonscraper
-  - General rule of thumb: reduce density, simplify chord shapes, remove fast fills
+### Customisation
+- Provide explicit paths to convert a subset: `./convert_opus.bat "songs/My Song.mp3"`
+- Tweak the bitrate or target extension inside `tools/convert_opus.ps1` if desired.
 
-Packaging for Clone Hero
-- charts/<SongFolder>/
-  - notes.chart
-  - audio.ogg or audio.mp3 (ogg preferred)
-  - song.ini
-  - album.png (optional)
-- Minimal song.ini template:
-  - [song]
-  - name = Your Song Title
-  - artist = Artist Name
-  - album = Album Name
-  - year = 2025
-  - charter = YourName
-  - delay = 0
-  - offset = 0
-  - preview_start_time = 60
-  - diff_guitar = 6
-  - diff_bass = 5
-  - diff_drums = 5
-- Drop the folder into Clone Heroâ€™s songs/ directory for testing
+Stage 3: Auto-chart with MIDI-CH
+--------------------------------
+### Script
+```
+./auto-chart.bat [--input DIR] [--output DIR] [--image NAME] [--opus DIR]
+```
 
-House conventions to enforce
-- Track names:
-  - PART GUITAR, PART BASS, PART DRUMS, PART KEYS (optional), PART VOCALS (optional)
-- Drums on MIDI channel 10 (index 9)
-- One tempo map (first/global track is fine). Keep PPQ consistent across repo (e.g., 480 or 960)
-- At most one of each of the main parts; merge or choose the best candidate if duplicates exist
-- Use MIDI Scout to detect collisions and normalize where safe
+### What happens
+- Builds/updates `midi-ch-batch` (Node + Puppeteer + Chrome dependencies).
+- Launches headless Chrome, loads the MIDI-CH auto page, uploads every `merged.mid` under the input directory, and captures the generated `.chart` file(s).
+- Copies each song’s `merged.mid` to `notes.mid` and pulls `opus-output/<Song>.opus` (or `.ogg`) into the chart folder as `song.opus` when available.
+- Injects basic metadata (Name/Artist) into `song.ini` and `notes.chart` using the folder name (`Artist - Title` expected).
 
-Tips
-- If Demucs struggles, try demucs model variations (e.g., --model htdemucs_ft). Current default is htdemucs.
-- If performance is slow, reduce Docker resource usage or process fewer songs concurrently.
-- For synth-heavy tracks, set --lead other. For vocal-driven melody, use --lead vocals.
+### Output
+- `charts/<Song>/`
+  - `notes.chart` (raw MIDI-CH export – inspect in Moonscraper)
+  - `notes.mid` (multi-track MIDI copy)
+  - `song.opus` (from Stage 2, if found)
+  - `song.ini` (auto-populated with title/artist and MIDI-CH defaults)
 
-Quick reference: common commands
-- Build: docker build -t ch-midi .
-- Process a local file: docker run --rm -v "%cd%":/work ch-midi python /usr/local/bin/pipeline.py "songs\MySong.mp3" --out out --lead vocals --drums skip
-- Process a YouTube URL: docker run --rm -v "%cd%":/work ch-midi python /usr/local/bin/pipeline.py "https://youtu.be/XXXXXXXX" --out out --lead other
-- Run analyzer: python tools/midi_scout.py out/MySong/merged.mid --out out/MySong/summary.json --normalize out/MySong/normalized.mid
-- Import into MIDI-CH: follow the MIDI-CH README; use normalized.mid if available
+### Customisation
+- Use `--help` to inspect CLI options.
+- Override `--opus` if your Opus files live elsewhere (e.g. `--opus /work/audio/opus`).
+- Add `-- --lead other` (after `--`) to forward extra arguments to the Node script (rarely needed).
+
+Post-processing & polishing
+---------------------------
+1. **Inspect the auto-chart folder** – Validate the generated chart in Moonscraper; tweak timing, event markers, and note patterns.
+2. **Difficulty reductions** – Use C3 Automation Tools (CAT) in REAPER to generate Hard/Medium/Easy based on the Expert chart.
+3. **Packaging** – Ensure the chart folder contains `notes.chart`, `song.opus` (or `.ogg`), `song.ini`, and optional art (`album.png`). Zip it or copy into Clone Hero’s `songs/` directory for testing.
+
+Troubleshooting
+---------------
+- **Docker build failures** – Restart Docker Desktop or allocate more resources. Each script echoes the `docker build` output.
+- **Demucs timing/stem issues** – Re-run Stage 1 with alternative options (e.g., change `LEAD`, enable drums) or clean up the stems manually.
+- **Basic Pitch errors referencing SciPy** – Ensure Stage 1 rebuilds the container (SciPy 1.9.3 is bundled).
+- **Opus copy missing** – Confirm Stage 2 ran and `opus-output/<Song>.opus` exists before Stage 3. The auto-chart script logs when it cannot find an Opus candidate.
+- **MIDI-CH Puppeteer timeouts** – Running `auto-chart.bat` again usually recovers. Long songs may need more than the default 120-second window; adjust the timeout in `tools/auto_chart_batch.js` if necessary.
+
+Reference
+---------
+- Demucs: <https://github.com/facebookresearch/demucs>
+- Basic Pitch: <https://github.com/spotify/basic-pitch>
+- MIDI-CH Autocharter: <https://github.com/EFHIII/midi-ch>
+- Moonscraper: <https://github.com/Fireboyd78/Moonscraper>
+- C3 Automation Tools: <https://github.com/C3UOfficial/c3>
 

@@ -5,6 +5,7 @@ set "ROOT=%CD%"
 set "IMAGE=midi-ch-batch"
 set "INPUT_DIR=out"
 set "OUTPUT_DIR=charts"
+set "OPUS_DIR=opus-output"
 set "DOCKERFILE=Dockerfile.midi-ch"
 
 if exist "%ROOT%\%DOCKERFILE%" (
@@ -84,6 +85,7 @@ exit /b 0
 :after_args
 call :resolve_path "%INPUT_DIR%" INPUT_REL INPUT_ABS || exit /b 1
 call :resolve_path "%OUTPUT_DIR%" OUTPUT_REL OUTPUT_ABS || exit /b 1
+call :resolve_path "%OPUS_DIR%" OPUS_REL OPUS_ABS || exit /b 1
 
 if not exist "!INPUT_ABS!" (
   echo Input directory not found: !INPUT_ABS!
@@ -95,13 +97,18 @@ if not exist "!OUTPUT_ABS!" (
   mkdir "!OUTPUT_ABS!" >nul 2>&1
 )
 
+if not exist "!OPUS_ABS!" (
+  echo Opus directory not found: !OPUS_ABS!
+  exit /b 1
+)
+
 echo Running MIDI-CH auto-chart...
 echo   Image : %IMAGE%
 echo   Input : !INPUT_ABS!
 
 echo   Output: !OUTPUT_ABS!
 
-docker run --rm -v "%ROOT%":/work %IMAGE% --input "/work/!INPUT_REL!" --output "/work/!OUTPUT_REL!" %EXTRA_ARGS%
+docker run --rm -v "%ROOT%":/work %IMAGE% --input "/work/!INPUT_REL!" --output "/work/!OUTPUT_REL!" --opus "/work/!OPUS_REL!" %EXTRA_ARGS%
 exit /b %ERRORLEVEL%
 
 :resolve_path

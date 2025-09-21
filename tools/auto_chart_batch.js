@@ -15,6 +15,7 @@ function getArg(flag, defaultValue) {
 const inputRoot = path.resolve(getArg('--input', process.env.INPUT_DIR || '/work/out'));
 const outputRoot = path.resolve(getArg('--output', process.env.OUTPUT_DIR || '/work/charts'));
 const midiChRoot = path.resolve(getArg('--midi-ch-root', process.env.MIDI_CH_ROOT || '/app/midi-ch/auto'));
+const opusRoot = path.resolve(getArg('--opus', process.env.OPUS_DIR || '/work/opus-output'));
 
 async function findMergedFiles(dir) {
   let results = [];
@@ -112,6 +113,21 @@ function deriveMetadataFromName(name) {
   return { artist, title };
 }
 
+async function maybeCopyOpus(songDir, destinationDir) {
+  const candidateNames = [
+    `${songDir}.opus`,
+    `${songDir}.ogg`,
+  ];
+  for (const name of candidateNames) {
+    const src = path.join(opusRoot, name);
+    if (fs.existsSync(src)) {
+      const target = path.join(destinationDir, 'song.opus');
+      await fs.promises.copyFile(src, target);
+      return true;
+    }
+  }
+  return false;
+}
 async function applyMetadata(destinationDir, { artist, title }) {
   const tasks = [];
   if (title || artist) {
@@ -217,9 +233,13 @@ function escapeChartValue(value) {
 
       const metadata = deriveMetadataFromName(songDir);
       await applyMetadata(chartDestination, metadata);
+      await maybeCopyOpus(songDir, chartDestination);
     }
   } finally {
     await browser.close();
   }
 })();
+
+
+
 
