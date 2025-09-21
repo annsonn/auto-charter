@@ -213,6 +213,7 @@ function escapeChartValue(value) {
       const { filename, buffer } = await convertWithPuppeteer(browser, midiPath);
       const fallback = path.basename(midiPath, path.extname(midiPath));
       await extractToCharts(buffer, filename, chartDestination, fallback);
+      await fs.promises.copyFile(midiPath, path.join(chartDestination, 'notes.mid'));
 
       const metadata = deriveMetadataFromName(songDir);
       await applyMetadata(chartDestination, metadata);
@@ -221,3 +222,4 @@ function escapeChartValue(value) {
     await browser.close();
   }
 })();
+
